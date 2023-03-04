@@ -1,0 +1,9 @@
+{
+    "name": "barrel-crafting",
+    "version": "0.0.3",
+    "author": "Z903",
+    "title": "Barrel Crafting",
+    "description": "A mod that adds barrel processing recipes",
+    "dependencies": ["(?) base >= 1.1"],
+    "factorio_version": "1.1"
+}
