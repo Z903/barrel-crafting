@@ -1,50 +1,34 @@
 local category = "barrel-crafting"
 local subgroup = "barrel-crafting-subgroup"
 
-local fluids = data.raw["fluid"]
+-- Iterators --
 
-function has_fluid(results)
-  if not (results) then return false end
-  for i,  result in pairs (results) do
-    if (result.type) and (result.type == "fluid") then 
-      return true 
+function all(obj, predicate)
+  if obj then
+    for _, result in pairs(obj) do
+      if not predicate(result) then
+        return false
+      end
+    end
+  end
+  return true
+end
+
+function any(obj, predicate)
+  if obj then
+    for _, result in pairs(obj) do
+      if predicate(result) then
+        return true
+      end
     end
   end
   return false
 end
 
-function is_fluid_recipe(recipe)
-  if recipe.normal then
-    if has_fluid(recipe.normal.ingredients) or has_fluid(recipe.normal.results) then
-      return true
-    end
-  elseif recipe.expensive then
-    if has_fluid(recipe.expensive.ingredients) or has_fluid(recipe.expensive.results) then
-      return true
-    end
-  else
-    if has_fluid(recipe.ingredients) or has_fluid(recipe.results) then
-      return true
-    end
-  end
-end
+-- Math --
 
-local recipes_with_fluids_names_list = {}
-
-for recipe_name, recipe_prot in pairs (data.raw.recipe) do
-  if not string.find(recipe_name, "-barrel") and is_fluid_recipe(recipe_prot) then
-    log ("added: " .. recipe_name)
-    recipes_with_fluids_names_list[#recipes_with_fluids_names_list+1] = recipe_name
-  end
-end
-
-function is_item_exists(item_name) 
-  for item_prot_name, item_prot in pairs (data.raw.item) do
-    if item_prot_name == item_name then
-      return true
-    end
-  end
-  return false
+function round(a)
+  return math.floor(a+0.5)
 end
 
 -- function lcm( m, n )
@@ -59,31 +43,71 @@ function gcd(a, b)
     end
 end
 
-function get_new_factor_k(ingredients, results)
-  local amounts_list = {}
+-- Factorio Helpers --
 
-  local g = nil
-  for i, ingredient in pairs(ingredients) do
-    if g == nil then
-      g = ingredient.amount
-    else
-      g = gcd(g, ingredient.amount)
+function is_fluid(item_proto)
+  return item_proto and (item_proto.type) and (item_proto.type == "fluid")
+end
+
+function is_barrel_fluid(item_proto)
+  return item_proto and (item_proto.type) and (item_proto.type == "fluid") and (data.raw.fluid[item_proto.name].auto_barrel ~= false)
+end
+
+function is_fluid_recipe(recipe)
+  for _, r in pairs({recipe.normal, recipe.expensive, recipe}) do
+    if r then
+      if any(r.ingredients, is_barrel_fluid) or any(r.results, is_barrel_fluid) then
+        return true
+      end
     end
   end
-  
-  for i, result in pairs(results) do
-    if g == nil then
-      g = result.amount
-    else
-      g = gcd(g, result.amount)
+  return false
+end
+
+function normalize_ingredients(ingredients)
+  local new_ingredients = {}
+  if type(ingredients) == "table" then
+    for i, ingredient in pairs(ingredients) do
+      -- normalize ingredients
+      -- log('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
+      if not ingredient.amount then
+        new_ingredients[i] = {name = ingredient[1], amount = ingredient[2]}
+      else
+        new_ingredients[i] = ingredient
+      end
+    end
+  elseif type(ingredients) == "string" then
+    new_ingredients[i] = {name = ingredients, amount = 1}
+  end
+  return new_ingredients
+end
+
+function get_first_recipe_result_name(recipe)
+  if recipe.main_product then
+    return recipe.main_product
+  elseif recipe.result or recipe.results then
+    return recipe.result or recipe.results[1].name or recipe.results[1][1]
+  elseif recipe.normal then
+    return recipe.normal.result or recipe.normal.results[1].name or recipe.normal.results[1][1]
+  elseif recipe.expensive then
+    return recipe.expensive.result or recipe.expensive.results[1].name or recipe.expensive.results[1][1]
+  end
+  return nil
+end
+
+function get_prot_by_name(item_name, types)
+  for _, item_type in ipairs(types) do
+    for item_prot_name, item_prot in pairs(data.raw[item_type]) do
+      if item_prot_name == item_name then
+        return item_prot
+      end
     end
   end
-
-  return (g or 1)
+  return nil
 end
 
 function get_item_prot(item_name) 
-  local item_type_list = {
+  return get_prot_by_name(item_name, {
     "ammo",
     "armor",
     "gun",
@@ -101,78 +125,121 @@ function get_item_prot(item_name)
     "item-with-tags",
     "item-with-label",
     "item-with-inventory",
-    "module"
-  }
-  for i, item_type in pairs (item_type_list) do
-    for item_prot_name, item_prot in pairs (data.raw[item_type]) do
-      if item_prot_name == item_name then
-        return item_prot
+    "module",
+    "fluid"
+  })
+end
+
+function is_item_exists(item_name) 
+  if get_prot_by_name(item_name, {"item"}) then
+    return true
+  end
+  return false
+end
+
+function get_new_factor_k(arg)
+  local g = nil
+  for _,ingredients in ipairs(arg) do
+    for i, ingredient in pairs(ingredients) do
+      if g == nil then
+        g = ingredient.amount
+      else
+        g = gcd(g, ingredient.amount)
       end
     end
   end
-  return nil
+  return (g or 1)
 end
 
-function get_icons(recipe)
+function set_icons(recipe)
   if recipe.icons then return true end
   if recipe.icon then 
     recipe.icons = {{icon = recipe.icon}}
     recipe.icon = nil
     return true
   end
-  local result_name = nil
-  if recipe.result or recipe.results then
-    result_name = recipe.result or recipe.results[1].name or recipe.results[1][1]
-  elseif recipe.normal then
-    result_name = recipe.normal.result or recipe.normal.results[1].name or recipe.normal.results[1][1]
-  elseif recipe.expensive then
-    result_name = recipe.expensive.result or recipe.expensive.results[1].name or recipe.expensive.results[1][1]
-  end
+  local result_name = get_first_recipe_result_name(recipe)
   
-  -- log ("Log1: [".. recipe.name .. "] = " .. result_name)
+  -- log("Log1: [".. recipe.name .. "] = " .. result_name)
   if result_name then
-    -- log ('get_icons: result_name is '..result_name)
-    local item_prot = get_item_prot(result_name) or data.raw.fluid[result_name]
-    -- log ("Log2: [".. recipe.name .. "] = " .. result_name .. " " .. serpent.block(item_prot))
+    -- log('set_icons: result_name is '..result_name)
+    local item_prot = get_item_prot(result_name)
+    -- or data.raw.fluid[result_name]
+    -- log("Log2: [".. recipe.name .. "] = " .. result_name .. " " .. serpent.block(item_prot))
     
     if item_prot then
-      -- log ('result_name: '..result_name)
+      -- log('result_name: '..result_name)
       recipe.icons = item_prot.icons or {{icon = item_prot.icon}}
       recipe.icon_size = item_prot.icon_size
     else
-      log ('error: no item_prot for recipe '.. serpent.block(recipe))
+      -- log('error: no item_prot for recipe '.. serpent.block(recipe))
     end
   else
-    log ('error: no result_name by recipe: '..recipe.name)
-    log (serpent.block (recipe))
+    -- log('error: no result_name by recipe: '..recipe.name)
+    -- log(serpent.block (recipe))
   end
-  -- log ("Log: [".. recipe.name .. "] = " .. serpent.block(recipe))
+  -- log("Log: [".. recipe.name .. "] = " .. serpent.block(recipe))
 end
 
-local locale = " "
-local new_line = [[ 
- ]]
-locale = locale .. new_line
+-- Get a localised_name
+-- https://wiki.factorio.com/Tutorial:Localisation#Default_Behavior(s)_for_finding_an_Unspecified_Localised_String
+function get_localised_name(recipe)
+  if recipe.localised_name ~= nil then
+    return recipe.localised_name
+  end
+  local iproto = get_item_prot(get_first_recipe_result_name(recipe))
+  if iproto and iproto.place_result then
+    local iproto2 = get_item_prot(iproto.place_result)
+    -- log("localised_name place_result: " .. recipe.name .. " -> " .. iproto.place_result .. " or " .. iproto.name .. " then " .. iproto2.name)
+    if iproto2 then
+      return iproto2.localised_name or {"entity-name." .. iproto2.name}
+     else
+      return iproto.localised_name or {"entity-name." .. iproto.name}
+   end
+  elseif iproto then
+    -- log("localised_name iproto: " .. recipe.name .. " -> " .. iproto.name)
+    if iproto.localised_name then
+      return iproto.localised_name
+    elseif is_fluid(iproto) then
+      return {"fluid-name." .. iproto.name}
+    else
+      return {"item-name." .. iproto.name}
+    end
+  else
+    -- log("localised_name else: " .. recipe.name .. " -> " .. recipe.name)
+    return {"recipe-name." .. recipe.name}
+  end
+  -- log("localised_name: " .. serpent.block(recipe.localised_name))
+end
 
+-- Find and add new recipes --
 
-for _, recipe_name in pairs (recipes_with_fluids_names_list) do
+local recipes_with_fluids_names_list = {}
+for recipe_name, recipe_prot in pairs(data.raw.recipe) do
+  if not string.find(recipe_name, "-barrel") and is_fluid_recipe(recipe_prot) then
+    -- log("added: " .. recipe_name)
+    recipes_with_fluids_names_list[#recipes_with_fluids_names_list+1] = recipe_name
+  end
+end
+
+for _, recipe_name in pairs(recipes_with_fluids_names_list) do
   local new_recipe = util.table.deepcopy(data.raw.recipe[recipe_name])
-  new_recipe.name = "bc-"..recipe_name
   
+  new_recipe.localised_name = get_localised_name(new_recipe)
+  
+  new_recipe.name = "bc-"..recipe_name
   new_recipe.allow_decomposition = false
   -- new_recipe.category = category
   new_recipe.subgroup = subgroup
-  new_recipe.enabled = true
+  -- new_recipe.enabled = true
   new_recipe.main_product = nil
   new_recipe.hide_from_player_crafting = true
   new_recipe.allow_as_intermediate = false
   
-  locale = locale .. new_recipe.name .. new_line
+  local icons_successful = set_icons(new_recipe) -- bool
+  
   local factor_k = 50
-  
-  local icons_successful = get_icons(new_recipe) -- bool
-  
-  
+
   -- multiply ingredients by factor_k
   for _, r in pairs({new_recipe, new_recipe.normal, new_recipe.expensive}) do
     if r then
@@ -188,16 +255,16 @@ for _, recipe_name in pairs (recipes_with_fluids_names_list) do
       if r.ingredients then
         for i, ingredient in pairs(r.ingredients) do
           -- normalize ingredients
-          -- log ('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
+          -- log('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
           if not ingredient.amount then
             ingredient = {name = ingredient[1], amount = ingredient[2]}
             r.ingredients[i] = ingredient
           end
-          -- log ('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
-          ingredient.amount = ingredient.amount * factor_k
+          -- log('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
+          ingredient.amount = round(ingredient.amount * factor_k)
 
           -- replace with barrels
-           if (ingredient.type) and (ingredient.type == "fluid") and is_item_exists(ingredient.name .. "-barrel") then
+           if is_fluid(ingredient) and is_item_exists(ingredient.name .. "-barrel") then
             need_barrels = need_barrels - ingredient.amount / factor_k
             r.ingredients[i] = {name = ingredient.name .. "-barrel", amount = ingredient.amount / factor_k, type = "item"}
           end
@@ -223,14 +290,14 @@ for _, recipe_name in pairs (recipes_with_fluids_names_list) do
             result.amount_min = nil
             result.amount_max = nil
           elseif not result.amount then
-            result = {name = result[1], amount = result[2] * factor_k}
+            result = {name = result[1], amount = round(result[2] * factor_k)}
             r.results[i] = result
           else
-            result.amount = result.amount * factor_k
+            result.amount = round(result.amount * factor_k)
           end
         
           -- replace with barrels
-          if (result.type) and (result.type == "fluid") and is_item_exists(result.name .. "-barrel") then
+          if is_fluid(result) and is_item_exists(result.name .. "-barrel") then
             need_barrels = need_barrels + result.amount / factor_k
             r.results[i] = {name = result.name .. "-barrel", amount = result.amount / factor_k, type = "item"}
           end
@@ -239,22 +306,22 @@ for _, recipe_name in pairs (recipes_with_fluids_names_list) do
         r.results = {}
       end
     
-      -- log ('error: ' .. new_recipe.name .. " " .. serpent.block(r.ingredients))
+      -- log('error: ' .. new_recipe.name .. " " .. serpent.block(r.ingredients))
       -- rescale ingredients based on new k
-      local new_factor_k = get_new_factor_k(r.ingredients, r.results)
-      for i, ingredient in pairs (r.ingredients) do
-        ingredient.amount = ingredient.amount / new_factor_k
+      local new_factor_k = get_new_factor_k({r.ingredients, r.results})
+      for i, ingredient in pairs(r.ingredients) do
+        ingredient.amount = round(ingredient.amount / new_factor_k)
       end
     
       -- rescale results based on new k
-      for i, result in pairs (r.results) do
+      for i, result in pairs(r.results) do
         if result.amount then
           result.amount = result.amount / new_factor_k
         elseif result.amount_max and result.amount_min then
           result.amount_max = result.amount_max / new_factor_k
           result.amount_min = result.amount_min / new_factor_k
         else
-          log ("error on: [".. new_recipe.name .. "] = " .. serpent.block(r))
+          -- log("error on: [".. new_recipe.name .. "] = " .. serpent.block(r))
         end
       end
     
@@ -276,12 +343,13 @@ for _, recipe_name in pairs (recipes_with_fluids_names_list) do
   for _, tech in pairs(data.raw.technology) do
     for _,effect in pairs(tech.effects or {}) do
       if effect.type and effect.type == "unlock-recipe" and effect.recipe == recipe_name then
-        new_recipe.enabed = false
+        new_recipe.enabled = false
         table.insert(tech.effects, {type = "unlock-recipe", recipe = new_recipe.name})
       end
     end
   end
   
-  -- log ("new_recipe: [".. new_recipe.name .. "] = " .. serpent.block(new_recipe))
+  -- log("old_recipe: [".. data.raw.recipe[recipe_name].name .. "] = " .. serpent.block(data.raw.recipe[recipe_name]))
+  -- log("new_recipe: [".. new_recipe.name .. "] = " .. serpent.block(new_recipe))
   data:extend({new_recipe})
 end
