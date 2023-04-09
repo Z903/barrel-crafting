@@ -1,6 +1,8 @@
 local category = "barrel-crafting"
 local subgroup = "barrel-crafting-subgroup"
 
+log("barrel fixes: " .. serpent.block(barrelcrafting.item_fixes))
+
 -- Iterators --
 
 function all(obj, predicate)
@@ -137,6 +139,15 @@ function is_item_exists(item_name)
   return false
 end
 
+function map_fluid_to_item_name(item_proto)
+  if item_proto and is_item_exists(barrelcrafting.item_fixes[item_proto.name]) then
+    return barrelcrafting.item_fixes[item_proto.name]
+  elseif is_fluid(item_proto) and is_item_exists(item_proto.name .. "-barrel") then
+    return item_proto.name .. "-barrel"
+  end
+  return nil
+end
+
 function get_new_factor_k(arg)
   local g = nil
   for _,ingredients in ipairs(arg) do
@@ -212,6 +223,14 @@ function get_localised_name(recipe)
   -- log("localised_name: " .. serpent.block(recipe.localised_name))
 end
 
+-- Warn if we have bad fixes
+
+for name, replacement in pairs(barrelcrafting.item_fixes) do
+  if not is_item_exists(replacement) then
+    log("Warning: Item " .. name .. " replacement " .. replacement .. " does not exist")
+  end
+end
+
 -- Find and add new recipes --
 
 local recipes_with_fluids_names_list = {}
@@ -264,9 +283,10 @@ for _, recipe_name in pairs(recipes_with_fluids_names_list) do
           ingredient.amount = round(ingredient.amount * factor_k)
 
           -- replace with barrels
-           if is_fluid(ingredient) and is_item_exists(ingredient.name .. "-barrel") then
+          ingredient_name = map_fluid_to_item_name(ingredient)
+          if ingredient_name then
             need_barrels = need_barrels - ingredient.amount / factor_k
-            r.ingredients[i] = {name = ingredient.name .. "-barrel", amount = ingredient.amount / factor_k, type = "item"}
+            r.ingredients[i] = {name = ingredient_name, amount = ingredient.amount / factor_k, type = "item"}
           end
         end
       else
@@ -297,9 +317,10 @@ for _, recipe_name in pairs(recipes_with_fluids_names_list) do
           end
         
           -- replace with barrels
-          if is_fluid(result) and is_item_exists(result.name .. "-barrel") then
+          result_name = map_fluid_to_item_name(result)
+          if result_name then
             need_barrels = need_barrels + result.amount / factor_k
-            r.results[i] = {name = result.name .. "-barrel", amount = result.amount / factor_k, type = "item"}
+            r.results[i] = {name = result_name, amount = result.amount / factor_k, type = "item"}
           end
         end
       else
@@ -331,10 +352,10 @@ for _, recipe_name in pairs(recipes_with_fluids_names_list) do
     
       if need_barrels > 0 then
         -- add ingredient
-        table.insert(r.ingredients, {name = "empty-barrel", amount = need_barrels})
+        table.insert(r.ingredients, {name = "empty-barrel", amount = need_barrels, catalyst_amount = need_barrels})
       elseif need_barrels < 0 then
         -- add result
-        table.insert(r.results, {name = "empty-barrel", amount = -need_barrels})
+        table.insert(r.results, {name = "empty-barrel", amount = -need_barrels, catalyst_amount = -need_barrels})
       end
     end
   end

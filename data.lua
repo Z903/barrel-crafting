@@ -17,3 +17,12 @@ data:extend(
     order = "a"
   }
 })
+
+barrelcrafting = {
+  item_fixes = {},
+  add_item_fix = function(src, dst)
+    barrelcrafting.item_fixes[src] = dst
+  end
+}
+
+require("fixes/angels")
