@@ -1,3 +1,5 @@
+require("globals")
+
 data:extend(
 {
   --item-group creation (for the new tab)
@@ -18,11 +20,12 @@ data:extend(
   }
 })
 
-barrelcrafting = {
-  item_fixes = {},
-  add_item_fix = function(src, dst)
-    barrelcrafting.item_fixes[src] = dst
-  end
-}
+require("fixes.angels")
 
-require("fixes/angels")
+
+-- barrelcrafting.defaults.amount = 50
+-- barrelcrafting.add_item_fix("petroleum-gas", "gas-methane-barrel")
+-- barrelcrafting.add_item_fix("nitrogen-gas", "nitrogen-canister", 80, "empty-canister")
+-- barrelcrafting.add_item_fix("nitrogen-fluid", "nitrogen-canister", 80, "empty-canister")
+
+log(serpent.block(DIR, {nocode = true}))
