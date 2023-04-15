@@ -195,7 +195,6 @@ end
 
 -- Automatically find barrel like recipes
 
-
 local make_recipe_key = function(a, b)
   local sortfunc = function(a, b)
     for _,i in pairs({0, 1, 2}) do
@@ -296,22 +295,12 @@ end
 
 -- Find and add new recipes --
 
-local recipes_with_fluids_names_list = {}
-for recipe_name, recipe_prot in pairs(data.raw.recipe) do
-  if not blocked_recipes[recipe_name] and is_fluid_recipe(recipe_prot) then
-    -- log("added: " .. recipe_name)
-    recipes_with_fluids_names_list[#recipes_with_fluids_names_list+1] = recipe_name
-  end
-end
-
-local new_recipes = {}
-
-for _, recipe_name in pairs(recipes_with_fluids_names_list) do
-  local new_recipe = util.table.deepcopy(data.raw.recipe[recipe_name])
+local make_barrel_recipe = function(recipe_prot)
+  local new_recipe = util.table.deepcopy(recipe_prot)
   
   new_recipe.localised_name = get_localised_name(new_recipe)
   
-  new_recipe.name = "bc-"..recipe_name
+  new_recipe.name = "bc-" .. new_recipe.name
   new_recipe.allow_decomposition = false
   -- new_recipe.category = category
   new_recipe.subgroup = subgroup
@@ -426,20 +415,28 @@ for _, recipe_name in pairs(recipes_with_fluids_names_list) do
       end 
     end
   end
-  
-  -- Look for technology that unlocks this 
-  for _, tech in pairs(data.raw.technology) do
-    for _,effect in pairs(tech.effects or {}) do
-      if effect.type and effect.type == "unlock-recipe" and effect.recipe == recipe_name then
-        new_recipe.enabled = false
-        table.insert(tech.effects, {type = "unlock-recipe", recipe = new_recipe.name})
+  return new_recipe
+end
+
+local new_recipes = {}
+for recipe_name, recipe_prot in pairs(data.raw.recipe) do
+  if not blocked_recipes[recipe_name] and is_fluid_recipe(recipe_prot) then
+    local new_recipe = make_barrel_recipe(recipe_prot)
+
+    -- Look for technology that unlocks this 
+    for _, tech in pairs(data.raw.technology) do
+      for _,effect in pairs(tech.effects or {}) do
+        if effect.type and effect.type == "unlock-recipe" and effect.recipe == recipe_name then
+          new_recipe.enabled = false
+          table.insert(tech.effects, {type = "unlock-recipe", recipe = new_recipe.name})
+        end
       end
     end
+
+    -- log("old_recipe: [".. data.raw.recipe[recipe_name].name .. "] = " .. serpent.block(data.raw.recipe[recipe_name]))
+    -- log("new_recipe: [".. new_recipe.name .. "] = " .. serpent.block(new_recipe))
+    table.insert(new_recipes, new_recipe)
   end
-  
-  -- log("old_recipe: [".. data.raw.recipe[recipe_name].name .. "] = " .. serpent.block(data.raw.recipe[recipe_name]))
-  -- log("new_recipe: [".. new_recipe.name .. "] = " .. serpent.block(new_recipe))
-  table.insert(new_recipes, new_recipe)
 end
 
 if new_recipes[1] then
