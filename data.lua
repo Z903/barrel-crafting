@@ -27,5 +27,3 @@ require("fixes.angels")
 -- barrelcrafting.add_item_fix("petroleum-gas", "gas-methane-barrel")
 -- barrelcrafting.add_item_fix("nitrogen-gas", "nitrogen-canister", 80, "empty-canister")
 -- barrelcrafting.add_item_fix("nitrogen-fluid", "nitrogen-canister", 80, "empty-canister")
-
-log(serpent.block(DIR, {nocode = true}))

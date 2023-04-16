@@ -17,6 +17,7 @@ end
 
 set_defaults(barrelcrafting, {
   item_fixes = {},
+  blocked_recipes = {},
   defaults = {
     amount = 50,
     empty_item = "empty-barrel"
@@ -139,4 +140,61 @@ function barrelcrafting.fn.is_type_fluid(item_proto)
   return item_proto and item_proto.type == "fluid"
 end
 
+-- Recipe Helpers --
 
+function barrelcrafting.fn.normalize_recipe_item(item)
+  item.name = item.name or item[1]
+  item.amount = item.amount or item[2]
+  item.type = item.type or "item"
+  item[1] = nil
+  item[2] = nil
+  return item
+end
+
+function barrelcrafting.fn.normalize_recipe(recipe)
+  for _, r in ipairs({recipe, recipe.normal, recipe.expensive}) do
+    if r then
+      -- normalize results
+      if r.results or r.result then
+        if r.results == nil and r.result then
+          r.results = {{ r.result, r.result_count or 1 }}
+        end
+        for idx, item in pairs(r.results) do
+          barrelcrafting.fn.normalize_recipe_item(item)
+        end
+        r.result = nil
+        r.result_count = nil
+      end
+      -- normalize ingredients
+      if r.ingredients then
+        for idx, item in pairs(r.ingredients) do
+          barrelcrafting.fn.normalize_recipe_item(item)
+        end
+      end
+    end
+  end
+end
+
+function barrelcrafting.fn.copy_recipe_ingredients(recipe)
+  local t = {}
+  if recipe and recipe.ingredients then
+    t = table.deepcopy(recipe.ingredients)
+  end
+  for _,item in pairs(t) do
+    barrelcrafting.fn.normalize_recipe_item(item)
+  end
+  return t
+end
+
+function barrelcrafting.fn.copy_recipe_results(recipe)
+  local t = {}
+  if recipe and recipe.results then
+    t = table.deepcopy(recipe.results)
+  elseif recipe and recipe.result then
+    table.insert(t, { recipe.result, recipe.result_count or 1 })
+  end
+  for _,item in pairs(t) do
+    barrelcrafting.fn.normalize_recipe_item(item)
+  end
+  return t
+end

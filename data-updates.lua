@@ -8,33 +8,23 @@ local lcm = self.fn.lcm
 local gcd = self.fn.gcd
 local all = self.fn.all
 local any = self.fn.any
+local first = barrelcrafting.fn.first
+local sum_by = barrelcrafting.fn.sum_by
+local count_by = barrelcrafting.fn.count_by
+
 local item_type = barrelcrafting.fn.item_type
 local is_type_fluid = self.fn.is_type_fluid
 local is_type_item = barrelcrafting.fn.is_type_item
-local first = barrelcrafting.fn.first
-local sum_by = barrelcrafting.fn.sum_by
+local copy_recipe_ingredients = barrelcrafting.fn.copy_recipe_ingredients
+local copy_recipe_results     = barrelcrafting.fn.copy_recipe_results
+local normalize_recipe        = barrelcrafting.fn.normalize_recipe
+
+local blocked_recipes = barrelcrafting.blocked_recipes
+local item_fixes      = barrelcrafting.item_fixes
 
 -- log("barrel fixes: " .. serpent.block(barrelcrafting, {nocode = true}))
 
 -- Factorio Helpers --
-
-function normalize_ingredients(ingredients)
-  local new_ingredients = {}
-  if type(ingredients) == "table" then
-    for i, ingredient in pairs(ingredients) do
-      -- normalize ingredients
-      -- log('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
-      if not ingredient.amount then
-        new_ingredients[i] = {name = ingredient[1], amount = ingredient[2]}
-      else
-        new_ingredients[i] = ingredient
-      end
-    end
-  elseif type(ingredients) == "string" then
-    new_ingredients[i] = {name = ingredients, amount = 1}
-  end
-  return new_ingredients
-end
 
 function get_first_recipe_result_name(recipe)
   if recipe.main_product then
@@ -217,28 +207,28 @@ end
 
 local fill_like = {}
 local empty_like = {}
-local blocked_recipes = {}
-local item_fixes = barrelcrafting.item_fixes or {}
 
 for recipe_name, recipe_prot in pairs(data.raw.recipe) do
   local r = recipe_prot
   
   -- if this is a recipe without difficulty
-  if r.ingredients and r.results and r.normal == nil and r.expensive == nil then
+  if r.normal == nil and r.expensive == nil then
+    local ingredients = copy_recipe_ingredients(r)
+    local results     = copy_recipe_results(r)
 
-    local items_in = barrelcrafting.fn.count_by(r.ingredients, item_type)
-    local items_ot = barrelcrafting.fn.count_by(r.results, item_type)
+    local items_in = count_by(ingredients, item_type)
+    local items_ot = count_by(results, item_type)
 
-    if items_in["fluid"] == 1 and items_in["item"] == 1 and items_ot["fluid"] == 0 and items_ot["item"] == 1 and first(r.ingredients, is_type_item).amount == 1 and first(r.results, is_type_item).amount == 1 then
+    if items_in["fluid"] == 1 and items_in["item"] == 1 and items_ot["fluid"] == 0 and items_ot["item"] == 1 and first(ingredients, is_type_item).amount == 1 and first(results, is_type_item).amount == 1 then
       -- fill like recipe
-      local k = make_recipe_key(r.ingredients, r.results)
+      local k = make_recipe_key(ingredients, results)
       if fill_like[k] == nil then
         fill_like[k] = {}
       end
       table.insert(fill_like[k], recipe_name)
-    elseif items_in["fluid"] == 0 and items_in["item"] == 1 and items_ot["fluid"] == 1 and items_ot["item"] == 1 and first(r.ingredients, is_type_item).amount == 1 and first(r.results, is_type_item).amount == 1 then
+    elseif items_in["fluid"] == 0 and items_in["item"] == 1 and items_ot["fluid"] == 1 and items_ot["item"] == 1 and first(ingredients, is_type_item).amount == 1 and first(results, is_type_item).amount == 1 then
       -- empty like recipe
-      local k = make_recipe_key(r.results, r.ingredients)
+      local k = make_recipe_key(results, ingredients)
       if empty_like[k] == nil then
         empty_like[k] = {}
       end
@@ -251,6 +241,8 @@ for key,recipe_names in pairs(fill_like) do
   -- if there is a matching fill and empty then 
   if empty_like[key] then
     recipe_prot = data.raw.recipe[recipe_names[1]]
+    local ingredients = copy_recipe_ingredients(recipe_prot)
+    local results     = copy_recipe_results(recipe_prot)
     
     for _,name in pairs(recipe_names) do
       blocked_recipes[name] = true
@@ -261,10 +253,10 @@ for key,recipe_names in pairs(fill_like) do
 
     --log("Found Barrel " .. recipe_prot.name .. " - " .. empty_like[key].name)
     local temp = nil
-    if recipe_prot.ingredients[1].type == "fluid" then
-        temp = {recipe_prot.ingredients[1], recipe_prot.ingredients[2], recipe_prot.results[1]}
+    if ingredients[1].type == "fluid" then
+        temp = {ingredients[1], ingredients[2], results[1]}
     else
-        temp = {recipe_prot.ingredients[2], recipe_prot.ingredients[1], recipe_prot.results[1]}
+        temp = {ingredients[2], ingredients[1], results[1]}
     end
     
     -- Dont overwrite existing entries
@@ -272,9 +264,7 @@ for key,recipe_names in pairs(fill_like) do
       barrelcrafting.add_item_fix(temp[1].name, temp[3].name, temp[1].amount,  temp[2].name)
     end
 
-    log("Found Barrel: " .. tostring(temp[1].amount) .. " " .. temp[1].name
-    .. " + " .. tostring(temp[2].amount) .. " " .. temp[2].name
-    .. " = "  .. tostring(temp[3].amount) .. " " .. temp[3].name)
+    -- log("Found Barrel: " .. tostring(temp[1].amount) .. " " .. temp[1].name .. " + " .. tostring(temp[2].amount) .. " " .. temp[2].name .. " = "  .. tostring(temp[3].amount) .. " " .. temp[3].name)
   end
 end
 
@@ -282,10 +272,10 @@ end
 
 for name, replacement in pairs(barrelcrafting.item_fixes) do
   if not is_item_exists(replacement.full_item) then
-    log("Warning: Item " .. name .. " full " .. replacement.full_item .. " does not exist")
+    log("[Barrel Crafting|Warning] Item " .. name .. " full " .. replacement.full_item .. " does not exist")
   end
   if not is_item_exists(replacement.empty_item) then
-    log("Warning: Item " .. name .. " empty " .. replacement.empty_item .. " does not exist")
+    log("[Barrel Crafting|Warning] Item " .. name .. " empty " .. replacement.empty_item .. " does not exist")
   end
 end
 
@@ -311,11 +301,14 @@ local make_barrel_recipe = function(recipe_prot)
   
   local icons_successful = set_icons(new_recipe) -- bool
 
+  -- Normalize recipe ingredients and results
+  normalize_recipe(new_recipe)
+
   local factor_k = self.factor_k or self.defaults.amount
 
   -- multiply ingredients by factor_k
   for _, r in ipairs({new_recipe, new_recipe.normal, new_recipe.expensive}) do
-    if r then
+    if r and r.results and r.ingredients then
       local need_items = {}
 
       -- changing production time
@@ -325,60 +318,36 @@ local make_barrel_recipe = function(recipe_prot)
         r.energy_required = 0.5 * factor_k 
       end
     
-      if r.ingredients then
-        for i, ingredient in pairs(r.ingredients) do
-          -- normalize ingredients
-          -- log('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
-          if not ingredient.amount then
-            ingredient = {name = ingredient[1], amount = ingredient[2]}
-            r.ingredients[i] = ingredient
-          end
-          -- log('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
-          ingredient.amount = round(ingredient.amount * factor_k)
+      for i, ingredient in pairs(r.ingredients) do
+        -- log('error: ' .. new_recipe.name .. " " .. serpent.block(ingredient))
+        ingredient.amount = round(ingredient.amount * factor_k)
 
-          -- replace with barrels
-          ingredient_name = map_fluid_to_item_name(ingredient)
-          if ingredient_name then
-            need_items[ingredient_name.empty_item] = (need_items[ingredient_name.empty_item] or 0) - ingredient.amount / ingredient_name.amount
-            r.ingredients[i] = {name = ingredient_name.full_item, amount = ingredient.amount / ingredient_name.amount, type = "item"}
-          end
+        -- replace with barrels
+        ingredient_name = map_fluid_to_item_name(ingredient)
+        if ingredient_name then
+          need_items[ingredient_name.empty_item] = (need_items[ingredient_name.empty_item] or 0) - ingredient.amount / ingredient_name.amount
+          r.ingredients[i] = {name = ingredient_name.full_item, amount = ingredient.amount / ingredient_name.amount, type = "item"}
         end
-      else
-        r.ingredients = {}
       end
 
-      -- normalize 'result' into 'results'
-      if r.result then
-        r.results = {{name = r.result, amount = r.result_count or 1}}
-        r.result = nil
-        r.result_count = nil
-      end
-    
       -- multiply results by factor_k
-      if r.results then
-        -- here can be items and/or fluids
-        for i, result in pairs(r.results) do
-          -- normalize ingredients
-          if result.amount then
-            result.amount = round(result.amount * factor_k)
-          elseif (result.amount_min) and (result.amount_max) then
-            result.amount = math.floor(0.5 * (result.amount_min + result.amount_max) * factor_k + 0.5)
-            result.amount_min = nil
-            result.amount_max = nil
-          else
-            result = {name = result[1], amount = round(result[2] * factor_k)}
-            r.results[i] = result
-          end
-        
-          -- replace with barrels
-          result_name = map_fluid_to_item_name(result)
-          if result_name then
-            need_items[result_name.empty_item] = (need_items[result_name.empty_item] or 0) + result.amount / result_name.amount
-            r.results[i] = {name = result_name.full_item, amount = result.amount / result_name.amount, type = "item"}
-          end
+      -- here can be items and/or fluids
+      for i, result in pairs(r.results) do
+        -- normalize ingredients
+        if result.amount then
+          result.amount = round(result.amount * factor_k)
+        elseif result.amount_min ~= nil and result.amount_max ~= nil then
+          result.amount = math.floor(0.5 * (result.amount_min + result.amount_max) * factor_k + 0.5)
+          result.amount_min = nil
+          result.amount_max = nil
         end
-      else
-        r.results = {}
+
+        -- replace with barrels
+        result_name = map_fluid_to_item_name(result)
+        if result_name then
+          need_items[result_name.empty_item] = (need_items[result_name.empty_item] or 0) + result.amount / result_name.amount
+          r.results[i] = {name = result_name.full_item, amount = result.amount / result_name.amount, type = "item"}
+        end
       end
     
       -- log('error: ' .. new_recipe.name .. " " .. serpent.block(r.ingredients))
@@ -395,8 +364,6 @@ local make_barrel_recipe = function(recipe_prot)
         elseif result.amount_max and result.amount_min then
           result.amount_max = result.amount_max / new_factor_k
           result.amount_min = result.amount_min / new_factor_k
-        else
-          -- log("error on: [".. new_recipe.name .. "] = " .. serpent.block(r))
         end
       end
     
@@ -404,15 +371,30 @@ local make_barrel_recipe = function(recipe_prot)
       r.energy_required = r.energy_required / new_factor_k
       for name, amount in pairs(need_items) do
         local amount = amount / new_factor_k
+        
+        -- If we already have empty barrels then skip
+        if any(r.ingredients, function(item) return item.name == name end) or any(r.results, function(item) return item.name == name end) then
+          -- log("skip recipe: ".. new_recipe.name .. " barrel")
+          return nil
+        end
 
         if amount > 0 then
           -- add ingredient
-          table.insert(r.ingredients, {name = name, amount = amount, catalyst_amount = amount})
+          table.insert(r.ingredients, {type = "item", name = name, amount = amount, catalyst_amount = amount})
         elseif amount < 0 then
           -- add result
-          table.insert(r.results, {name = name, amount = -amount, catalyst_amount = -amount})
+          table.insert(r.results, {type = "item", name = name, amount = -amount, catalyst_amount = -amount})
         end
-      end 
+      end
+      
+      -- If the recipe inputs and outputs are the same then skip
+      if table.compare(
+        sum_by(r.ingredients, function(item) return { item.type .. ":" .. item.name, item.amount } end),
+        sum_by(r.results,     function(item) return { item.type .. ":" .. item.name, item.amount } end)
+      ) then
+        -- log("skip recipe: ".. new_recipe.name .. " compare")
+        return nil
+      end
     end
   end
   return new_recipe
@@ -422,20 +404,22 @@ local new_recipes = {}
 for recipe_name, recipe_prot in pairs(data.raw.recipe) do
   if not blocked_recipes[recipe_name] and is_fluid_recipe(recipe_prot) then
     local new_recipe = make_barrel_recipe(recipe_prot)
+    if new_recipe then
 
-    -- Look for technology that unlocks this 
-    for _, tech in pairs(data.raw.technology) do
-      for _,effect in pairs(tech.effects or {}) do
-        if effect.type and effect.type == "unlock-recipe" and effect.recipe == recipe_name then
-          new_recipe.enabled = false
-          table.insert(tech.effects, {type = "unlock-recipe", recipe = new_recipe.name})
+      -- Look for technology that unlocks this 
+      for _, tech in pairs(data.raw.technology) do
+        for _,effect in pairs(tech.effects or {}) do
+          if effect.type and effect.type == "unlock-recipe" and effect.recipe == recipe_name then
+            new_recipe.enabled = false
+            table.insert(tech.effects, {type = "unlock-recipe", recipe = new_recipe.name})
+          end
         end
       end
-    end
 
-    -- log("old_recipe: [".. data.raw.recipe[recipe_name].name .. "] = " .. serpent.block(data.raw.recipe[recipe_name]))
-    -- log("new_recipe: [".. new_recipe.name .. "] = " .. serpent.block(new_recipe))
-    table.insert(new_recipes, new_recipe)
+      -- log("old_recipe: [".. data.raw.recipe[recipe_name].name .. "] = " .. serpent.block(data.raw.recipe[recipe_name]))
+      -- log("new_recipe: [".. new_recipe.name .. "] = " .. serpent.block(new_recipe))
+      table.insert(new_recipes, new_recipe)
+    end
   end
 end
 
