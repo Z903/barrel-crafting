@@ -21,6 +21,7 @@ data:extend(
 })
 
 require("fixes.angels")
+require("fixes.spaceexploration")
 
 
 -- barrelcrafting.defaults.amount = 50

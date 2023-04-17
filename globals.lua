@@ -140,6 +140,13 @@ function barrelcrafting.fn.is_type_fluid(item_proto)
   return item_proto and item_proto.type == "fluid"
 end
 
+function barrelcrafting.fn.item_expected_amount(item_proto)
+  if item_proto then
+    return (item_proto.amount or (0.5 * (item_proto.amount_min + item_proto.amount_max))) * (item_proto.probability or 1)
+  end
+  return nil
+end
+
 -- Recipe Helpers --
 
 function barrelcrafting.fn.normalize_recipe_item(item)

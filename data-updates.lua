@@ -15,6 +15,7 @@ local count_by = barrelcrafting.fn.count_by
 local item_type = barrelcrafting.fn.item_type
 local is_type_fluid = self.fn.is_type_fluid
 local is_type_item = barrelcrafting.fn.is_type_item
+local item_expected_amount = barrelcrafting.fn.item_expected_amount
 local copy_recipe_ingredients = barrelcrafting.fn.copy_recipe_ingredients
 local copy_recipe_results     = barrelcrafting.fn.copy_recipe_results
 local normalize_recipe        = barrelcrafting.fn.normalize_recipe
@@ -30,11 +31,11 @@ function get_first_recipe_result_name(recipe)
   if recipe.main_product then
     return recipe.main_product
   elseif recipe.result or recipe.results then
-    return recipe.result or recipe.results[1].name or recipe.results[1][1]
+    return recipe.result or (recipe.results[1] and (recipe.results[1].name or recipe.results[1][1]))
   elseif recipe.normal then
-    return recipe.normal.result or recipe.normal.results[1].name or recipe.normal.results[1][1]
+    return recipe.normal.result or (recipe.normal.results[1] and (recipe.normal.results[1].name or recipe.normal.results[1][1]))
   elseif recipe.expensive then
-    return recipe.expensive.result or recipe.expensive.results[1].name or recipe.expensive.results[1][1]
+    return recipe.expensive.result or (recipe.expensive.results[1] and (recipe.expensive.results[1].name or recipe.expensive.results[1][1]))
   end
   return nil
 end
@@ -106,9 +107,14 @@ function get_new_factor_k(old_k, arg)
   for _,ingredients in ipairs(arg) do
     for i, ingredient in pairs(ingredients) do
       if k == nil then
-        k = ingredient.amount
+        k = ingredient.amount or gcd(ingredient.amount_min, ingredient.amount_max)
       else
-        k = gcd(k, ingredient.amount)
+        if ingredient.amount ~= nil then
+          k = gcd(k, ingredient.amount)
+        else
+          k = gcd(k, ingredient.amount_min)
+          k = gcd(k, ingredient.amount_max)
+        end
       end
     end
   end
@@ -271,11 +277,13 @@ end
 -- Warn if we have bad fixes -- 
 
 for name, replacement in pairs(barrelcrafting.item_fixes) do
-  if not is_item_exists(replacement.full_item) then
-    log("[Barrel Crafting|Warning] Item " .. name .. " full " .. replacement.full_item .. " does not exist")
-  end
-  if not is_item_exists(replacement.empty_item) then
-    log("[Barrel Crafting|Warning] Item " .. name .. " empty " .. replacement.empty_item .. " does not exist")
+  if replacement then
+    if not is_item_exists(replacement.full_item) then
+      log("[Barrel Crafting|Warning] Item " .. name .. " full " .. replacement.full_item .. " does not exist")
+    end
+    if not is_item_exists(replacement.empty_item) then
+      log("[Barrel Crafting|Warning] Item " .. name .. " empty " .. replacement.empty_item .. " does not exist")
+    end
   end
 end
 
@@ -333,18 +341,31 @@ local make_barrel_recipe = function(recipe_prot)
       -- multiply results by factor_k
       -- here can be items and/or fluids
       for i, result in pairs(r.results) do
-        -- normalize ingredients
+        -- normalize result
         if result.amount then
           result.amount = round(result.amount * factor_k)
         elseif result.amount_min ~= nil and result.amount_max ~= nil then
-          result.amount = math.floor(0.5 * (result.amount_min + result.amount_max) * factor_k + 0.5)
-          result.amount_min = nil
-          result.amount_max = nil
+          --result.amount = math.floor(0.5 * (result.amount_min + result.amount_max) * factor_k + 0.5)
+          --log(serpent.block(new_recipe))
+          result.amount_min = round(result.amount_min * factor_k)
+          result.amount_max = round(result.amount_max * factor_k)
         end
 
         -- replace with barrels
         result_name = map_fluid_to_item_name(result)
         if result_name then
+          -- Skip recipies with fluid probability
+          if result.probability ~= nil and result.probability ~= 1 then
+            -- log("skip recipe: ".. new_recipe.name .. " probability")
+            return nil
+          end
+          
+          if result.amount == nil and result.amount_min ~= nil and result.amount_max ~= nil then
+            result.amount = round(item_expected_amount(result))
+            result.amount_min = nil
+            result.amount_max = nil
+          end
+          
           need_items[result_name.empty_item] = (need_items[result_name.empty_item] or 0) + result.amount / result_name.amount
           r.results[i] = {name = result_name.full_item, amount = result.amount / result_name.amount, type = "item"}
         end
@@ -359,11 +380,55 @@ local make_barrel_recipe = function(recipe_prot)
     
       -- rescale results based on new k
       for i, result in pairs(r.results) do
+        if result.amount == nil and result.amount_max == result.amount_min then
+          result.amount = result.amount_max
+          result.amount_min = nil
+          result.amount_max = nil
+        end
+      
         if result.amount then
           result.amount = result.amount / new_factor_k
         elseif result.amount_max and result.amount_min then
           result.amount_max = result.amount_max / new_factor_k
           result.amount_min = result.amount_min / new_factor_k
+        end
+        
+        if result.probability ~= nil then
+          local before = table.deepcopy(result)
+          
+          local target_p = 1 - (1-result.probability) ^ (factor_k / new_factor_k)
+          local e = item_expected_amount(result)
+          
+          local a = math.ceil(e / target_p)
+          local p = e / a
+          
+          --log("b: " .. e       .. " " .. result.probability .. " " .. (result.amount or "nil"))
+          --log("a: " .. (p * a) .. " " .. p                  .. " " .. a)
+          
+          
+          -- if expected value is a half number
+          if math.floor(e * 2) == e * 2 and e > 1 then
+            result.amount = nil
+            --log("HERE: " .. new_recipe.name .. " " .. result.probability .. " " .. (result.amount or "nil") .. " + " .. e .. " => " .. result.amount_min .. " - " .. result.amount_max)
+            result.amount_max = math.ceil(e)
+            result.amount_min = math.floor(e)
+            result.probability = nil
+          else
+            result.amount = a
+            result.probability = p
+            --result.amount = math.ceil(e)
+            --result.probability = e / result.amount
+            --log("HERE: " .. new_recipe.name .. " " .. result.probability .. " " .. (result.amount or "nil") .. " + " .. e .. " => " .. result.amount .. " * " .. result.probability .. "%")
+            result.amount_max = nil
+            result.amount_min = nil
+          end
+          
+          --if e ~= item_expected_amount(result) then
+          --  log("Error: " .. new_recipe.name .. " " .. e .. " => " .. item_expected_amount(result))
+          --  log("Bf:    " .. serpent.block(before))
+          --  log("Af:    " .. serpent.block(result))
+          --end
+          
         end
       end
     
@@ -389,8 +454,8 @@ local make_barrel_recipe = function(recipe_prot)
       
       -- If the recipe inputs and outputs are the same then skip
       if table.compare(
-        sum_by(r.ingredients, function(item) return { item.type .. ":" .. item.name, item.amount } end),
-        sum_by(r.results,     function(item) return { item.type .. ":" .. item.name, item.amount } end)
+        sum_by(r.ingredients, function(item) return { item.type .. ":" .. item.name, item_expected_amount(item)} end),
+        sum_by(r.results,     function(item) return { item.type .. ":" .. item.name, item_expected_amount(item)} end)
       ) then
         -- log("skip recipe: ".. new_recipe.name .. " compare")
         return nil
