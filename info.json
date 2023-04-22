@@ -1,16 +1,18 @@
 {
     "name": "barrel-crafting",
-    "version": "0.0.6",
+    "version": "0.0.7",
     "author": "Z903",
     "title": "Barrel Crafting",
     "description": "A mod that adds barrel processing recipes",
     "dependencies": [
         "base >= 1.1",
+        "rusty-locale",
         "? angelsbioprocessing",
         "? angelsindustries",
         "? angelspetrochem",
         "? angelsrefining",
         "? IndustrialRevolution3",
+        "? Krastorio2",
         "? space-exploration"
     ],
     "factorio_version": "1.1"

@@ -1,6 +1,9 @@
 local category = "barrel-crafting"
 local subgroup = "barrel-crafting-subgroup"
 
+local rusty_locale = require('__rusty-locale__.locale')
+local rusty_icons  = require('__rusty-locale__.icons')
+
 -- Load functions --
 local self = barrelcrafting
 local round = self.fn.round
@@ -49,30 +52,6 @@ function get_prot_by_name(item_name, types)
     end
   end
   return nil
-end
-
-function get_item_prot(item_name) 
-  return get_prot_by_name(item_name, {
-    "ammo",
-    "armor",
-    "gun",
-    "item",
-    "capsule",
-    "repair-tool",
-    "mining-tool",
-    "item-with-entity-data",
-    "rail-planner",
-    "tool",
-    "blueprint",
-    "deconstruction-item",
-    "blueprint-book",
-    "selection-tool",
-    "item-with-tags",
-    "item-with-label",
-    "item-with-inventory",
-    "module",
-    "fluid"
-  })
 end
 
 function is_item_exists(item_name) 
@@ -126,67 +105,6 @@ function get_new_factor_k(old_k, arg)
     temp = 1
   end
   return k / temp
-end
-
-function set_icons(recipe)
-  if recipe.icons then return true end
-  if recipe.icon then 
-    recipe.icons = {{icon = recipe.icon}}
-    recipe.icon = nil
-    return true
-  end
-  local result_name = get_first_recipe_result_name(recipe)
-  
-  -- log("Log1: [".. recipe.name .. "] = " .. result_name)
-  if result_name then
-    -- log('set_icons: result_name is '..result_name)
-    local item_prot = get_item_prot(result_name)
-    -- or data.raw.fluid[result_name]
-    -- log("Log2: [".. recipe.name .. "] = " .. result_name .. " " .. serpent.block(item_prot))
-    
-    if item_prot then
-      -- log('result_name: '..result_name)
-      recipe.icons = item_prot.icons or {{icon = item_prot.icon}}
-      recipe.icon_size = item_prot.icon_size
-    else
-      -- log('error: no item_prot for recipe '.. serpent.block(recipe))
-    end
-  else
-    -- log('error: no result_name by recipe: '..recipe.name)
-    -- log(serpent.block (recipe))
-  end
-  -- log("Log: [".. recipe.name .. "] = " .. serpent.block(recipe))
-end
-
--- Get a localised_name
--- https://wiki.factorio.com/Tutorial:Localisation#Default_Behavior(s)_for_finding_an_Unspecified_Localised_String
-function get_localised_name(recipe)
-  if recipe.localised_name ~= nil then
-    return recipe.localised_name
-  end
-  local iproto = get_item_prot(get_first_recipe_result_name(recipe))
-  if iproto and iproto.place_result then
-    local iproto2 = get_item_prot(iproto.place_result)
-    -- log("localised_name place_result: " .. recipe.name .. " -> " .. iproto.place_result .. " or " .. iproto.name .. " then " .. iproto2.name)
-    if iproto2 then
-      return iproto2.localised_name or {"entity-name." .. iproto2.name}
-     else
-      return iproto.localised_name or {"entity-name." .. iproto.name}
-   end
-  elseif iproto then
-    -- log("localised_name iproto: " .. recipe.name .. " -> " .. iproto.name)
-    if iproto.localised_name then
-      return iproto.localised_name
-    elseif is_type_fluid(iproto) then
-      return {"fluid-name." .. iproto.name}
-    else
-      return {"item-name." .. iproto.name}
-    end
-  else
-    -- log("localised_name else: " .. recipe.name .. " -> " .. recipe.name)
-    return {"recipe-name." .. recipe.name}
-  end
-  -- log("localised_name: " .. serpent.block(recipe.localised_name))
 end
 
 -- Automatically find barrel like recipes
@@ -296,8 +214,11 @@ end
 local make_barrel_recipe = function(recipe_prot)
   local new_recipe = util.table.deepcopy(recipe_prot)
   
-  new_recipe.localised_name = get_localised_name(new_recipe)
-  
+  local r_locale = rusty_locale.of_recipe(recipe_prot)
+  new_recipe.localised_name = r_locale.name
+  new_recipe.localised_description = r_locale.description
+  new_recipe.icons = rusty_icons.of_recipe(recipe_prot)
+
   new_recipe.name = "bc-" .. new_recipe.name
   new_recipe.allow_decomposition = false
   -- new_recipe.category = category
@@ -306,8 +227,6 @@ local make_barrel_recipe = function(recipe_prot)
   new_recipe.main_product = nil
   new_recipe.hide_from_player_crafting = true
   new_recipe.allow_as_intermediate = false
-  
-  local icons_successful = set_icons(new_recipe) -- bool
 
   -- Normalize recipe ingredients and results
   normalize_recipe(new_recipe)
